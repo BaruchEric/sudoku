@@ -1,40 +1,39 @@
 const SOLUTION =
   "534678912672195348198342567859761423426853791713924856961537284287419635345286179";
 
+const DIGITS = ["1", "2", "3", "4", "5", "6", "7", "8", "9"];
+
 const PUZZLES = {
-  easy: [
+  easy:
     "53..7...." +
-      "6..195..." +
-      ".98....6." +
-      "8...6...3" +
-      "4..8.3..1" +
-      "7...2...6" +
-      ".6....28." +
-      "...419..5" +
-      "....8..79",
-  ],
-  medium: [
+    "6..195..." +
+    ".98....6." +
+    "8...6...3" +
+    "4..8.3..1" +
+    "7...2...6" +
+    ".6....28." +
+    "...419..5" +
+    "....8..79",
+  medium:
     "53..7...." +
-      "6..195..." +
-      ".9.....6." +
-      "8...6..23" +
-      ".2.8.3..1" +
-      "7...2...6" +
-      ".6....28." +
-      "...419..5" +
-      "....8..79",
-  ],
-  hard: [
+    "6..195..." +
+    ".98......" +
+    "8...6...3" +
+    "4..8.3..1" +
+    "7.......6" +
+    "......28." +
+    "...419..5" +
+    "....8..79",
+  hard:
     "5...7...." +
-      "..2195..." +
-      ".9.....6." +
-      "8.....2.3" +
-      ".2.8....1" +
-      "7...2...." +
-      ".6....2.." +
-      "...4.9..5" +
-      "....8..7.",
-  ],
+    "..2195..." +
+    ".9.....6." +
+    "8.....2.3" +
+    ".2.8....1" +
+    "7...2...." +
+    ".6....2.." +
+    "...4.9..5" +
+    "....8..7.",
 };
 
 const boardElement = document.querySelector("#sudoku-board");
@@ -54,10 +53,10 @@ const progressFill = document.querySelector("#progress-fill");
 const cellPopover = document.querySelector("#cell-popover");
 const celebration = document.querySelector("#celebration");
 const celebrationMessage = document.querySelector("#celebration-message");
+const numberButtons = document.querySelectorAll(".number-button");
 
 const state = {
   difficulty: "easy",
-  puzzle: [],
   solution: [],
   given: new Set(),
   values: [],
@@ -67,9 +66,18 @@ const state = {
   mistakes: 0,
   history: [],
   completed: false,
-  startTime: Date.now(),
+  startTime: 0,
   timerId: null,
 };
+
+function cellRC(index) {
+  return { row: Math.floor(index / 9) + 1, col: (index % 9) + 1 };
+}
+
+function setStatus(visible, spoken = visible) {
+  statusMessage.textContent = visible;
+  announce(spoken);
+}
 
 function announce(message) {
   liveRegion.textContent = message;
@@ -99,13 +107,8 @@ function gridToString(grid) {
 }
 
 function createTransformPlan(options = {}) {
-  const digits = shuffle(["1", "2", "3", "4", "5", "6", "7", "8", "9"]);
-  const digitMap = new Map(
-    ["1", "2", "3", "4", "5", "6", "7", "8", "9"].map((digit, index) => [
-      digit,
-      digits[index],
-    ]),
-  );
+  const shuffled = shuffle(DIGITS);
+  const digitMap = new Map(DIGITS.map((digit, index) => [digit, shuffled[index]]));
 
   return {
     digitMap,
@@ -145,7 +148,7 @@ function transformBoardString(boardString, plan) {
 }
 
 function createPuzzle(difficulty, fixed = false) {
-  const basePuzzle = PUZZLES[difficulty][0];
+  const basePuzzle = PUZZLES[difficulty];
   const baseSolution = SOLUTION;
 
   if (fixed) {
@@ -200,14 +203,14 @@ function updateTimer() {
 
 function startNewGame(difficulty, fixed = false) {
   const { puzzle, solution } = createPuzzle(difficulty, fixed);
+  const puzzleGrid = stringToGrid(puzzle);
 
   state.difficulty = difficulty;
-  state.puzzle = stringToGrid(puzzle);
   state.solution = stringToGrid(solution);
-  state.values = stringToGrid(puzzle).map((char) => (char === "." ? "" : char));
+  state.values = puzzleGrid.map((char) => (char === "." ? "" : char));
   state.notes = Array.from({ length: 81 }, () => new Set());
   state.given = new Set(
-    state.puzzle
+    puzzleGrid
       .map((char, index) => (char !== "." ? index : -1))
       .filter((index) => index !== -1),
   );
@@ -238,11 +241,10 @@ function startNewGame(difficulty, fixed = false) {
   }
 
   const clueCount = state.given.size;
-  statusMessage.textContent =
+  setStatus(
     difficulty === "hard"
       ? "The quiet squares are carrying the weight."
-      : "Find the next clean placement.";
-  announce(
+      : "Find the next clean placement.",
     `Started a new ${difficulty} Sudoku with ${clueCount} clues and ${
       81 - clueCount
     } empty spaces.`,
@@ -354,21 +356,18 @@ function pushHistory() {
   }
 }
 
-function renderCell(index) {
+function renderCell(index, ctx) {
   const cell = getCell(index);
   const value = state.values[index];
   const notes = state.notes[index];
-  const selectedValue =
-    state.selectedIndex !== null ? state.values[state.selectedIndex] : "";
-  const peers = state.selectedIndex !== null ? getPeers(state.selectedIndex) : new Set();
-  const isRelated = state.selectedIndex === index || peers.has(index);
-  const isSelected = state.selectedIndex === index;
+  const isRelated = ctx.selectedIndex === index || ctx.peers.has(index);
+  const isSelected = ctx.selectedIndex === index;
   const isFixed = state.given.has(index);
   const isMatch =
-    selectedValue !== "" &&
+    ctx.selectedValue !== "" &&
     value !== "" &&
-    selectedValue === value &&
-    state.selectedIndex !== index;
+    ctx.selectedValue === value &&
+    ctx.selectedIndex !== index;
   const isError =
     value !== "" && !isFixed && value !== state.solution[index] && !state.completed;
 
@@ -398,8 +397,20 @@ function renderCell(index) {
 }
 
 function render() {
+  const ctx = {
+    selectedIndex: state.selectedIndex,
+    selectedValue:
+      state.selectedIndex !== null ? state.values[state.selectedIndex] : "",
+    peers: state.selectedIndex !== null ? getPeers(state.selectedIndex) : new Set(),
+  };
+
+  const digitCounts = new Map();
   for (let index = 0; index < 81; index += 1) {
-    renderCell(index);
+    renderCell(index, ctx);
+    const value = state.values[index];
+    if (value) {
+      digitCounts.set(value, (digitCounts.get(value) ?? 0) + 1);
+    }
   }
 
   const { filled, correct, notesTotal } = countValues();
@@ -412,9 +423,8 @@ function render() {
   progressFill.style.width = `${Math.round((filled / 81) * 100)}%`;
   undoButton.disabled = state.history.length === 0 || state.completed;
 
-  document.querySelectorAll(".number-button").forEach((button) => {
-    const value = button.dataset.value;
-    const count = state.values.filter((cellValue) => cellValue === value).length;
+  numberButtons.forEach((button) => {
+    const count = digitCounts.get(button.dataset.value) ?? 0;
     button.classList.toggle("is-complete", count >= 9);
   });
 }
@@ -422,9 +432,8 @@ function render() {
 function handleCellSelection(index) {
   state.selectedIndex = index;
   render();
-  const row = Math.floor(index / 9) + 1;
-  const col = (index % 9) + 1;
   showCellPopover(index);
+  const { row, col } = cellRC(index);
   announce(`Selected row ${row}, column ${col}.`);
 }
 
@@ -443,8 +452,7 @@ function placeValue(rawValue) {
   const index = state.selectedIndex;
 
   if (state.given.has(index)) {
-    statusMessage.textContent = "That square is locked in as a clue.";
-    announce("That square is a given clue.");
+    setStatus("That square is locked in as a clue.", "That square is a given clue.");
     return;
   }
 
@@ -452,8 +460,10 @@ function placeValue(rawValue) {
 
   if (state.notesMode) {
     if (state.values[index]) {
-      statusMessage.textContent = "Clear the square first if you want to sketch notes there.";
-      announce("Clear the square before adding notes.");
+      setStatus(
+        "Clear the square first if you want to sketch notes there.",
+        "Clear the square before adding notes.",
+      );
       return;
     }
 
@@ -465,9 +475,10 @@ function placeValue(rawValue) {
       state.notes[index].add(value);
     }
 
+    const { row, col } = cellRC(index);
     statusMessage.textContent = `Notes ${
       state.notes[index].has(value) ? "added to" : "removed from"
-    } row ${Math.floor(index / 9) + 1}, column ${(index % 9) + 1}.`;
+    } row ${row}, column ${col}.`;
     render();
     showCellPopover(index);
     return;
@@ -483,11 +494,12 @@ function placeValue(rawValue) {
 
   if (value !== state.solution[index] && !wasWrongBefore) {
     state.mistakes += 1;
-    statusMessage.textContent = "Not quite. The square is highlighted so you can revisit it.";
-    announce("That move does not match the solution.");
+    setStatus(
+      "Not quite. The square is highlighted so you can revisit it.",
+      "That move does not match the solution.",
+    );
   } else if (value === state.solution[index]) {
-    statusMessage.textContent = "Nice. That placement fits cleanly.";
-    announce("Value placed.");
+    setStatus("Nice. That placement fits cleanly.", "Value placed.");
   }
 
   render();
@@ -507,8 +519,7 @@ function eraseSelected() {
   const index = state.selectedIndex;
 
   if (state.given.has(index)) {
-    statusMessage.textContent = "Clue squares cannot be erased.";
-    announce("Clue squares cannot be erased.");
+    setStatus("Clue squares cannot be erased.");
     return;
   }
 
@@ -517,8 +528,7 @@ function eraseSelected() {
   state.notes[index].clear();
   render();
   showCellPopover(index);
-  statusMessage.textContent = "Square cleared.";
-  announce("Square cleared.");
+  setStatus("Square cleared.");
 }
 
 function moveSelection(deltaRow, deltaCol) {
@@ -538,10 +548,10 @@ function toggleNotes() {
   state.notesMode = !state.notesMode;
   notesToggle.classList.toggle("is-active", state.notesMode);
   notesToggle.textContent = state.notesMode ? "Notes On" : "Notes";
-  statusMessage.textContent = state.notesMode
-    ? "Pencil marks are active."
-    : "Final entries are active.";
-  announce(state.notesMode ? "Notes mode on." : "Notes mode off.");
+  setStatus(
+    state.notesMode ? "Pencil marks are active." : "Final entries are active.",
+    state.notesMode ? "Notes mode on." : "Notes mode off.",
+  );
 }
 
 function undoLastMove() {
@@ -558,8 +568,7 @@ function undoLastMove() {
   celebration.classList.add("hidden");
   render();
   showCellPopover(state.selectedIndex);
-  statusMessage.textContent = "Last move undone.";
-  announce("Last move undone.");
+  setStatus("Last move undone.");
 }
 
 function checkBoard() {
@@ -574,16 +583,19 @@ function checkBoard() {
   render();
 
   if (incorrect.length === 0) {
-    statusMessage.textContent =
-      "Everything on the board is currently consistent. Keep going.";
-    announce("Board check complete. No incorrect squares found.");
+    setStatus(
+      "Everything on the board is currently consistent. Keep going.",
+      "Board check complete. No incorrect squares found.",
+    );
     return;
   }
 
-  statusMessage.textContent = `${incorrect.length} square${
-    incorrect.length === 1 ? "" : "s"
-  } need attention. They are highlighted in rose.`;
-  announce(`Board check found ${incorrect.length} incorrect squares.`);
+  setStatus(
+    `${incorrect.length} square${
+      incorrect.length === 1 ? "" : "s"
+    } need attention. They are highlighted in rose.`,
+    `Board check found ${incorrect.length} incorrect squares.`,
+  );
 }
 
 function hint() {
@@ -610,10 +622,8 @@ function hint() {
   state.selectedIndex = targetIndex;
   render();
   hideCellPopover();
-  statusMessage.textContent = `Hint placed at row ${Math.floor(targetIndex / 9) + 1}, column ${
-    (targetIndex % 9) + 1
-  }.`;
-  announce("Hint placed.");
+  const { row, col } = cellRC(targetIndex);
+  setStatus(`Hint placed at row ${row}, column ${col}.`, "Hint placed.");
   checkCompletion();
 }
 
@@ -623,8 +633,7 @@ function revealSolution() {
   state.values = [...state.solution];
   state.notes = Array.from({ length: 81 }, () => new Set());
   render();
-  statusMessage.textContent = "The full solution is on the board.";
-  announce("Solution revealed.");
+  setStatus("The full solution is on the board.", "Solution revealed.");
   checkCompletion(true);
 }
 
@@ -647,10 +656,12 @@ function checkCompletion(revealed = false) {
         state.mistakes === 1 ? "" : "s"
       }.`;
   celebration.classList.remove("hidden");
-  statusMessage.textContent = revealed
-    ? "Solution shown. Start another board when you're ready."
-    : "Puzzle complete. Clean work.";
-  announce("Puzzle complete.");
+  setStatus(
+    revealed
+      ? "Solution shown. Start another board when you're ready."
+      : "Puzzle complete. Clean work.",
+    "Puzzle complete.",
+  );
 }
 
 function handleKeydown(event) {
@@ -714,7 +725,7 @@ document.querySelectorAll("[data-difficulty]").forEach((button) => {
   });
 });
 
-document.querySelectorAll(".number-button").forEach((button) => {
+numberButtons.forEach((button) => {
   button.addEventListener("click", () => placeValue(button.dataset.value));
 });
 
@@ -734,20 +745,21 @@ document.addEventListener("pointerdown", (event) => {
 
   hideCellPopover();
 });
-window.addEventListener("resize", () => {
-  if (state.selectedIndex !== null && !cellPopover.classList.contains("hidden")) {
-    showCellPopover(state.selectedIndex);
+let repositionRaf = null;
+function repositionPopover() {
+  if (repositionRaf !== null) {
+    return;
   }
-});
-window.addEventListener(
-  "scroll",
-  () => {
+  repositionRaf = requestAnimationFrame(() => {
+    repositionRaf = null;
     if (state.selectedIndex !== null && !cellPopover.classList.contains("hidden")) {
       showCellPopover(state.selectedIndex);
     }
-  },
-  true,
-);
+  });
+}
+
+window.addEventListener("resize", repositionPopover);
+window.addEventListener("scroll", repositionPopover, true);
 
 buildBoard();
 startNewGame("easy", true);
