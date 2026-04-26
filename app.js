@@ -48,6 +48,7 @@ const correctCount = document.querySelector("#correct-count");
 const noteCount = document.querySelector("#note-count");
 const notesToggle = document.querySelector("#notes-toggle");
 const highlightToggle = document.querySelector("#highlight-toggle");
+const rainbowToggle = document.querySelector("#rainbow-toggle");
 const checkButton = document.querySelector("#check-button");
 const undoButton = document.querySelector("#undo-button");
 const pauseButton = document.querySelector("#pause-button");
@@ -72,6 +73,7 @@ const state = {
   notesMode: false,
   highlightMode: false,
   highlightDigit: "",
+  rainbowMode: false,
   mistakes: 0,
   history: [],
   completed: false,
@@ -292,6 +294,7 @@ function startNewGame(difficulty, fixed = false) {
   state.notesMode = false;
   state.highlightMode = false;
   state.highlightDigit = "";
+  state.rainbowMode = false;
   state.mistakes = 0;
   state.history = [];
   state.completed = false;
@@ -304,6 +307,9 @@ function startNewGame(difficulty, fixed = false) {
   notesToggle.classList.remove("is-active");
   highlightToggle.textContent = "Highlight";
   highlightToggle.classList.remove("is-active");
+  rainbowToggle.textContent = "Rainbow";
+  rainbowToggle.classList.remove("is-active");
+  boardElement.classList.remove("is-rainbow");
   document
     .querySelectorAll("[data-difficulty]")
     .forEach((button) =>
@@ -469,16 +475,18 @@ function renderCell(index, ctx) {
   );
 
   if (value) {
+    cell.dataset.digit = value;
     cell.innerHTML = `<span class="cell-value">${value}</span>`;
     return;
   }
 
+  cell.dataset.digit = "";
   const noteMarkup = Array.from({ length: 9 }, (_, offset) => {
     const digit = String(offset + 1);
     const has = notes.has(digit);
     const cls =
       has && ctx.highlightDigit === digit ? ' class="is-highlighted-note"' : "";
-    return `<span${cls}>${has ? digit : ""}</span>`;
+    return `<span data-digit="${digit}"${cls}>${has ? digit : ""}</span>`;
   }).join("");
 
   cell.innerHTML = `<div class="note-grid" aria-hidden="true">${noteMarkup}</div>`;
@@ -569,6 +577,20 @@ function toggleHighlightMode() {
       ? "Pick a number to highlight every match."
       : "Highlight off. Numbers place again.",
     state.highlightMode ? "Highlight mode on." : "Highlight mode off.",
+  );
+}
+
+function toggleRainbowMode() {
+  state.rainbowMode = !state.rainbowMode;
+  rainbowToggle.classList.toggle("is-active", state.rainbowMode);
+  rainbowToggle.textContent = state.rainbowMode ? "Rainbow On" : "Rainbow";
+  boardElement.classList.toggle("is-rainbow", state.rainbowMode);
+  saveState();
+  setStatus(
+    state.rainbowMode
+      ? "Rainbow palette on. Every digit gets its own color."
+      : "Rainbow off. Default ink restored.",
+    state.rainbowMode ? "Rainbow mode on." : "Rainbow mode off.",
   );
 }
 
@@ -897,6 +919,7 @@ function saveState() {
       notesMode: state.notesMode,
       highlightMode: state.highlightMode,
       highlightDigit: state.highlightDigit,
+      rainbowMode: state.rainbowMode,
       mistakes: state.mistakes,
       completed: state.completed,
       paused: state.paused,
@@ -941,6 +964,7 @@ function hydrateFromSave() {
     state.notesMode = !!saved.notesMode;
     state.highlightMode = !!saved.highlightMode;
     state.highlightDigit = saved.highlightDigit || "";
+    state.rainbowMode = !!saved.rainbowMode;
     state.mistakes = saved.mistakes || 0;
     state.history = [];
     state.completed = !!saved.completed;
@@ -951,6 +975,9 @@ function hydrateFromSave() {
     notesToggle.textContent = state.notesMode ? "Notes On" : "Notes";
     highlightToggle.classList.toggle("is-active", state.highlightMode);
     highlightToggle.textContent = state.highlightMode ? "Highlight On" : "Highlight";
+    rainbowToggle.classList.toggle("is-active", state.rainbowMode);
+    rainbowToggle.textContent = state.rainbowMode ? "Rainbow On" : "Rainbow";
+    boardElement.classList.toggle("is-rainbow", state.rainbowMode);
     document
       .querySelectorAll("[data-difficulty]")
       .forEach((button) =>
@@ -1002,6 +1029,7 @@ document.querySelector("#erase-button").addEventListener("click", eraseSelected)
 document.querySelector("#solve-button").addEventListener("click", revealSolution);
 document.querySelector("#notes-toggle").addEventListener("click", toggleNotes);
 document.querySelector("#highlight-toggle").addEventListener("click", toggleHighlightMode);
+document.querySelector("#rainbow-toggle").addEventListener("click", toggleRainbowMode);
 document.querySelector("#pause-button").addEventListener("click", togglePause);
 document.querySelector("#resume-button").addEventListener("click", resumeGame);
 document.querySelector("#popover-erase").addEventListener("click", eraseSelected);
