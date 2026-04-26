@@ -47,13 +47,20 @@ const filledCount = document.querySelector("#filled-count");
 const correctCount = document.querySelector("#correct-count");
 const noteCount = document.querySelector("#note-count");
 const notesToggle = document.querySelector("#notes-toggle");
+const highlightToggle = document.querySelector("#highlight-toggle");
 const checkButton = document.querySelector("#check-button");
 const undoButton = document.querySelector("#undo-button");
+const pauseButton = document.querySelector("#pause-button");
+const pauseButtonLabel = document.querySelector("#pause-button-label");
+const pauseOverlay = document.querySelector("#pause-overlay");
+const resumeButton = document.querySelector("#resume-button");
 const progressFill = document.querySelector("#progress-fill");
 const cellPopover = document.querySelector("#cell-popover");
 const celebration = document.querySelector("#celebration");
 const celebrationMessage = document.querySelector("#celebration-message");
 const numberButtons = document.querySelectorAll(".number-button");
+
+const STORAGE_KEY = "sunlit-sudoku:save:v1";
 
 const state = {
   difficulty: "easy",
@@ -63,11 +70,16 @@ const state = {
   notes: [],
   selectedIndex: null,
   notesMode: false,
+  highlightMode: false,
+  highlightDigit: "",
   mistakes: 0,
   history: [],
   completed: false,
-  startTime: 0,
+  paused: false,
+  elapsedMs: 0,
+  runStartedAt: 0,
   timerId: null,
+  hydrating: false,
 };
 
 function cellRC(index) {
@@ -187,18 +199,80 @@ function buildBoard() {
   }
 }
 
-function startTimer() {
+function currentElapsedMs() {
+  if (state.paused || state.runStartedAt === 0) {
+    return state.elapsedMs;
+  }
+  return state.elapsedMs + (Date.now() - state.runStartedAt);
+}
+
+function startTimer({ elapsedMs = 0, paused = false } = {}) {
   clearInterval(state.timerId);
-  state.startTime = Date.now();
-  state.timerId = window.setInterval(updateTimer, 1000);
+  state.elapsedMs = elapsedMs;
+  state.paused = paused;
+  state.runStartedAt = paused ? 0 : Date.now();
+  state.timerId = window.setInterval(handleTimerTick, 1000);
   updateTimer();
 }
 
+function handleTimerTick() {
+  updateTimer();
+  if (!state.paused && !state.completed) {
+    saveState();
+  }
+}
+
 function updateTimer() {
-  const elapsed = Math.floor((Date.now() - state.startTime) / 1000);
+  const elapsed = Math.floor(currentElapsedMs() / 1000);
   const minutes = String(Math.floor(elapsed / 60)).padStart(2, "0");
   const seconds = String(elapsed % 60).padStart(2, "0");
-  timerLabel.textContent = `${minutes}:${seconds}`;
+  timerLabel.textContent = `${minutes}:${seconds}${state.paused ? " (paused)" : ""}`;
+}
+
+function pauseGame() {
+  if (state.paused || state.completed) {
+    return;
+  }
+  state.elapsedMs = currentElapsedMs();
+  state.runStartedAt = 0;
+  state.paused = true;
+  hideCellPopover();
+  applyPauseUI();
+  updateTimer();
+  saveState();
+  setStatus("Paused. Resume when you're ready.", "Game paused.");
+}
+
+function resumeGame() {
+  if (!state.paused || state.completed) {
+    return;
+  }
+  state.runStartedAt = Date.now();
+  state.paused = false;
+  applyPauseUI();
+  updateTimer();
+  saveState();
+  setStatus("Back to the board.", "Game resumed.");
+}
+
+function togglePause() {
+  if (state.paused) {
+    resumeGame();
+  } else {
+    pauseGame();
+  }
+}
+
+function applyPauseUI() {
+  pauseOverlay.classList.toggle("hidden", !state.paused);
+  pauseOverlay.setAttribute("aria-hidden", state.paused ? "false" : "true");
+  pauseButton.classList.toggle("is-active", state.paused);
+  pauseButtonLabel.textContent = state.paused ? "Resume" : "Pause";
+  pauseButton.setAttribute(
+    "title",
+    state.paused ? "Resume game" : "Pause game",
+  );
+  boardElement.setAttribute("aria-hidden", state.paused ? "true" : "false");
 }
 
 function startNewGame(difficulty, fixed = false) {
@@ -216,6 +290,8 @@ function startNewGame(difficulty, fixed = false) {
   );
   state.selectedIndex = state.values.findIndex((value) => value === "");
   state.notesMode = false;
+  state.highlightMode = false;
+  state.highlightDigit = "";
   state.mistakes = 0;
   state.history = [];
   state.completed = false;
@@ -226,6 +302,8 @@ function startNewGame(difficulty, fixed = false) {
   mistakesCount.textContent = "0";
   notesToggle.textContent = "Notes";
   notesToggle.classList.remove("is-active");
+  highlightToggle.textContent = "Highlight";
+  highlightToggle.classList.remove("is-active");
   document
     .querySelectorAll("[data-difficulty]")
     .forEach((button) =>
@@ -233,7 +311,9 @@ function startNewGame(difficulty, fixed = false) {
     );
 
   startTimer();
+  applyPauseUI();
   render();
+  saveState();
 
   if (state.selectedIndex !== -1 && state.selectedIndex !== null) {
     const cell = getCell(state.selectedIndex);
@@ -370,12 +450,17 @@ function renderCell(index, ctx) {
     ctx.selectedIndex !== index;
   const isError =
     value !== "" && !isFixed && value !== state.solution[index] && !state.completed;
+  const isHighlighted =
+    ctx.highlightDigit !== "" && value === ctx.highlightDigit;
+  const hasHighlightedNote =
+    ctx.highlightDigit !== "" && value === "" && notes.has(ctx.highlightDigit);
 
   cell.classList.toggle("is-fixed", isFixed);
   cell.classList.toggle("is-related", isRelated);
   cell.classList.toggle("is-selected", isSelected);
   cell.classList.toggle("is-match", isMatch);
   cell.classList.toggle("is-error", isError);
+  cell.classList.toggle("is-highlighted", isHighlighted || hasHighlightedNote);
   cell.setAttribute(
     "aria-label",
     `Row ${cell.dataset.row} Column ${cell.dataset.col}${
@@ -390,7 +475,10 @@ function renderCell(index, ctx) {
 
   const noteMarkup = Array.from({ length: 9 }, (_, offset) => {
     const digit = String(offset + 1);
-    return `<span>${notes.has(digit) ? digit : ""}</span>`;
+    const has = notes.has(digit);
+    const cls =
+      has && ctx.highlightDigit === digit ? ' class="is-highlighted-note"' : "";
+    return `<span${cls}>${has ? digit : ""}</span>`;
   }).join("");
 
   cell.innerHTML = `<div class="note-grid" aria-hidden="true">${noteMarkup}</div>`;
@@ -402,6 +490,7 @@ function render() {
     selectedValue:
       state.selectedIndex !== null ? state.values[state.selectedIndex] : "",
     peers: state.selectedIndex !== null ? getPeers(state.selectedIndex) : new Set(),
+    highlightDigit: state.highlightDigit,
   };
 
   const digitCounts = new Map();
@@ -424,17 +513,63 @@ function render() {
   undoButton.disabled = state.history.length === 0 || state.completed;
 
   numberButtons.forEach((button) => {
-    const count = digitCounts.get(button.dataset.value) ?? 0;
+    const value = button.dataset.value;
+    const count = digitCounts.get(value) ?? 0;
     button.classList.toggle("is-complete", count >= 9);
+    button.classList.toggle(
+      "is-highlight-active",
+      state.highlightDigit !== "" && state.highlightDigit === value,
+    );
   });
 }
 
 function handleCellSelection(index) {
+  if (state.paused) {
+    return;
+  }
   state.selectedIndex = index;
   render();
   showCellPopover(index);
+  saveState();
   const { row, col } = cellRC(index);
   announce(`Selected row ${row}, column ${col}.`);
+}
+
+function setHighlightedDigit(rawValue) {
+  const value = rawValue ? String(rawValue) : "";
+  state.highlightDigit = state.highlightDigit === value ? "" : value;
+  render();
+  saveState();
+  if (state.highlightDigit) {
+    setStatus(
+      `Highlighting every ${state.highlightDigit} on the board.`,
+      `Highlighting ${state.highlightDigit}.`,
+    );
+  } else {
+    setStatus("Highlight cleared.", "Highlight cleared.");
+  }
+}
+
+function toggleHighlightMode() {
+  state.highlightMode = !state.highlightMode;
+  highlightToggle.classList.toggle("is-active", state.highlightMode);
+  highlightToggle.textContent = state.highlightMode ? "Highlight On" : "Highlight";
+  if (state.highlightMode && state.notesMode) {
+    state.notesMode = false;
+    notesToggle.classList.remove("is-active");
+    notesToggle.textContent = "Notes";
+  }
+  if (!state.highlightMode) {
+    state.highlightDigit = "";
+    render();
+  }
+  saveState();
+  setStatus(
+    state.highlightMode
+      ? "Pick a number to highlight every match."
+      : "Highlight off. Numbers place again.",
+    state.highlightMode ? "Highlight mode on." : "Highlight mode off.",
+  );
 }
 
 function clearNotesFromPeers(index, value) {
@@ -444,6 +579,15 @@ function clearNotesFromPeers(index, value) {
 }
 
 function placeValue(rawValue) {
+  if (state.paused) {
+    return;
+  }
+
+  if (state.highlightMode) {
+    setHighlightedDigit(rawValue);
+    return;
+  }
+
   if (state.completed || state.selectedIndex === null) {
     hideCellPopover();
     return;
@@ -503,6 +647,7 @@ function placeValue(rawValue) {
   }
 
   render();
+  saveState();
   checkCompletion();
 
   if (!state.completed) {
@@ -511,7 +656,7 @@ function placeValue(rawValue) {
 }
 
 function eraseSelected() {
-  if (state.completed || state.selectedIndex === null) {
+  if (state.paused || state.completed || state.selectedIndex === null) {
     hideCellPopover();
     return;
   }
@@ -528,10 +673,14 @@ function eraseSelected() {
   state.notes[index].clear();
   render();
   showCellPopover(index);
+  saveState();
   setStatus("Square cleared.");
 }
 
 function moveSelection(deltaRow, deltaCol) {
+  if (state.paused) {
+    return;
+  }
   const current = state.selectedIndex ?? 0;
   const row = Math.floor(current / 9);
   const col = current % 9;
@@ -541,6 +690,7 @@ function moveSelection(deltaRow, deltaCol) {
   state.selectedIndex = nextIndex;
   render();
   showCellPopover(nextIndex);
+  saveState();
   getCell(nextIndex)?.focus();
 }
 
@@ -548,6 +698,14 @@ function toggleNotes() {
   state.notesMode = !state.notesMode;
   notesToggle.classList.toggle("is-active", state.notesMode);
   notesToggle.textContent = state.notesMode ? "Notes On" : "Notes";
+  if (state.notesMode && state.highlightMode) {
+    state.highlightMode = false;
+    state.highlightDigit = "";
+    highlightToggle.classList.remove("is-active");
+    highlightToggle.textContent = "Highlight";
+    render();
+  }
+  saveState();
   setStatus(
     state.notesMode ? "Pencil marks are active." : "Final entries are active.",
     state.notesMode ? "Notes mode on." : "Notes mode off.",
@@ -555,7 +713,7 @@ function toggleNotes() {
 }
 
 function undoLastMove() {
-  if (state.history.length === 0) {
+  if (state.paused || state.history.length === 0) {
     return;
   }
 
@@ -568,6 +726,7 @@ function undoLastMove() {
   celebration.classList.add("hidden");
   render();
   showCellPopover(state.selectedIndex);
+  saveState();
   setStatus("Last move undone.");
 }
 
@@ -599,7 +758,7 @@ function checkBoard() {
 }
 
 function hint() {
-  if (state.completed) {
+  if (state.paused || state.completed) {
     return;
   }
 
@@ -622,17 +781,22 @@ function hint() {
   state.selectedIndex = targetIndex;
   render();
   hideCellPopover();
+  saveState();
   const { row, col } = cellRC(targetIndex);
   setStatus(`Hint placed at row ${row}, column ${col}.`, "Hint placed.");
   checkCompletion();
 }
 
 function revealSolution() {
+  if (state.paused) {
+    return;
+  }
   hideCellPopover();
   pushHistory();
   state.values = [...state.solution];
   state.notes = Array.from({ length: 81 }, () => new Set());
   render();
+  saveState();
   setStatus("The full solution is on the board.", "Solution revealed.");
   checkCompletion(true);
 }
@@ -645,9 +809,12 @@ function checkCompletion(revealed = false) {
   }
 
   state.completed = true;
+  state.elapsedMs = currentElapsedMs();
+  state.runStartedAt = 0;
   clearInterval(state.timerId);
   hideCellPopover();
   render();
+  saveState();
 
   const timeTaken = timerLabel.textContent;
   celebrationMessage.textContent = revealed
@@ -669,6 +836,15 @@ function handleKeydown(event) {
     event.target instanceof HTMLButtonElement &&
     event.target.closest(".keypad, .tool-row, .command-bar, .cell-popover")
   ) {
+    return;
+  }
+
+  if (event.key.toLowerCase() === "p") {
+    togglePause();
+    return;
+  }
+
+  if (state.paused) {
     return;
   }
 
@@ -696,11 +872,124 @@ function handleKeydown(event) {
     moveSelection(0, 1);
   } else if (event.key.toLowerCase() === "n") {
     toggleNotes();
+  } else if (event.key.toLowerCase() === "g") {
+    toggleHighlightMode();
   } else if (event.key.toLowerCase() === "h") {
     hint();
   } else if (event.key === "Escape") {
     hideCellPopover();
   }
+}
+
+function saveState() {
+  if (state.hydrating) {
+    return;
+  }
+  try {
+    const data = {
+      v: 1,
+      difficulty: state.difficulty,
+      solution: state.solution.join(""),
+      given: [...state.given],
+      values: state.values,
+      notes: state.notes.map((noteSet) => [...noteSet]),
+      selectedIndex: state.selectedIndex,
+      notesMode: state.notesMode,
+      highlightMode: state.highlightMode,
+      highlightDigit: state.highlightDigit,
+      mistakes: state.mistakes,
+      completed: state.completed,
+      paused: state.paused,
+      elapsedMs: currentElapsedMs(),
+    };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  } catch (err) {
+    // localStorage may be unavailable (private mode, quota); ignore.
+  }
+}
+
+function loadSavedState() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    if (!data || data.v !== 1) return null;
+    if (typeof data.solution !== "string" || data.solution.length !== 81) return null;
+    if (!Array.isArray(data.values) || data.values.length !== 81) return null;
+    if (!Array.isArray(data.notes) || data.notes.length !== 81) return null;
+    return data;
+  } catch (err) {
+    return null;
+  }
+}
+
+function hydrateFromSave() {
+  const saved = loadSavedState();
+  if (!saved) {
+    return false;
+  }
+
+  state.hydrating = true;
+  try {
+    state.difficulty = saved.difficulty || "easy";
+    state.solution = stringToGrid(saved.solution);
+    state.given = new Set(saved.given || []);
+    state.values = saved.values.map((value) => (value ? String(value) : ""));
+    state.notes = saved.notes.map((arr) => new Set(arr || []));
+    state.selectedIndex =
+      typeof saved.selectedIndex === "number" ? saved.selectedIndex : null;
+    state.notesMode = !!saved.notesMode;
+    state.highlightMode = !!saved.highlightMode;
+    state.highlightDigit = saved.highlightDigit || "";
+    state.mistakes = saved.mistakes || 0;
+    state.history = [];
+    state.completed = !!saved.completed;
+
+    difficultyLabel.textContent =
+      state.difficulty.charAt(0).toUpperCase() + state.difficulty.slice(1);
+    notesToggle.classList.toggle("is-active", state.notesMode);
+    notesToggle.textContent = state.notesMode ? "Notes On" : "Notes";
+    highlightToggle.classList.toggle("is-active", state.highlightMode);
+    highlightToggle.textContent = state.highlightMode ? "Highlight On" : "Highlight";
+    document
+      .querySelectorAll("[data-difficulty]")
+      .forEach((button) =>
+        button.classList.toggle(
+          "is-active",
+          button.dataset.difficulty === state.difficulty,
+        ),
+      );
+
+    const elapsedMs = Math.max(0, Number(saved.elapsedMs) || 0);
+    if (state.completed) {
+      clearInterval(state.timerId);
+      state.timerId = null;
+      state.elapsedMs = elapsedMs;
+      state.runStartedAt = 0;
+      state.paused = false;
+      celebration.classList.remove("hidden");
+    } else {
+      celebration.classList.add("hidden");
+      startTimer({ elapsedMs, paused: !!saved.paused });
+    }
+
+    applyPauseUI();
+    updateTimer();
+    render();
+  } finally {
+    state.hydrating = false;
+  }
+
+  saveState();
+  setStatus(
+    state.completed
+      ? "Welcome back. The board you finished is still here."
+      : state.paused
+        ? "Welcome back. Resume when you're ready."
+        : "Welcome back. Pick up where you left off.",
+    "Restored saved game.",
+  );
+  return true;
 }
 
 document.querySelector("#new-game-button").addEventListener("click", () => {
@@ -712,6 +1001,9 @@ document.querySelector("#undo-button").addEventListener("click", undoLastMove);
 document.querySelector("#erase-button").addEventListener("click", eraseSelected);
 document.querySelector("#solve-button").addEventListener("click", revealSolution);
 document.querySelector("#notes-toggle").addEventListener("click", toggleNotes);
+document.querySelector("#highlight-toggle").addEventListener("click", toggleHighlightMode);
+document.querySelector("#pause-button").addEventListener("click", togglePause);
+document.querySelector("#resume-button").addEventListener("click", resumeGame);
 document.querySelector("#popover-erase").addEventListener("click", eraseSelected);
 document.querySelector("#popover-close").addEventListener("click", hideCellPopover);
 checkButton.addEventListener("click", checkBoard);
@@ -762,4 +1054,6 @@ window.addEventListener("resize", repositionPopover);
 window.addEventListener("scroll", repositionPopover, true);
 
 buildBoard();
-startNewGame("easy", true);
+if (!hydrateFromSave()) {
+  startNewGame("easy", true);
+}
