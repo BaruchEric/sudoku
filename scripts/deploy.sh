@@ -25,8 +25,22 @@ export CLOUDFLARE_EMAIL="$EMAIL"
 export CLOUDFLARE_API_KEY="$CF_KEY"
 export CLOUDFLARE_ACCOUNT_ID="$ACCOUNT_ID"
 
-echo "→ Deploying $DEPLOY_DIR to Pages project '$PROJECT_NAME' (branch: $BRANCH)"
-bunx wrangler pages deploy "$DEPLOY_DIR" \
+SHA="$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || date +%s)"
+BUILD_DIR="$(mktemp -d -t games-portal-build-XXXXXX)"
+trap 'rm -rf "$BUILD_DIR"' EXIT
+cp -R "$DEPLOY_DIR/." "$BUILD_DIR/"
+
+# Append ?v=<sha> to local css/js refs so browsers fetch fresh assets per deploy.
+while IFS= read -r -d '' f; do
+  sed -i.bak -E \
+    -e "s#(href=\"\\./[^\"?]+\\.css)\"#\\1?v=${SHA}\"#g" \
+    -e "s#(src=\"\\./[^\"?]+\\.js)\"#\\1?v=${SHA}\"#g" \
+    "$f"
+  rm -f "$f.bak"
+done < <(find "$BUILD_DIR" -name "*.html" -print0)
+
+echo "→ Deploying $BUILD_DIR (cache-bust v=$SHA) to Pages project '$PROJECT_NAME' (branch: $BRANCH)"
+bunx wrangler pages deploy "$BUILD_DIR" \
   --project-name="$PROJECT_NAME" \
   --branch="$BRANCH" \
   --commit-dirty=true
