@@ -1,0 +1,12 @@
+{
+  "name": "sunlit-sudoku",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:icons": "bun scripts/build-icons.mjs",
+    "deploy": "bash scripts/deploy.sh"
+  },
+  "devDependencies": {
+    "sharp": "^0.33.5"
+  }
+}
