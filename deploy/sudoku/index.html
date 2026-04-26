@@ -52,6 +52,10 @@
             <span class="button-icon" aria-hidden="true">?</span>
             <span>Hint</span>
           </button>
+          <button class="command-button" id="pause-button" title="Pause game">
+            <span class="button-icon" aria-hidden="true">||</span>
+            <span id="pause-button-label">Pause</span>
+          </button>
         </div>
       </section>
 
@@ -64,6 +68,20 @@
               role="grid"
               aria-label="Sudoku board"
             ></div>
+            <div
+              id="pause-overlay"
+              class="pause-overlay hidden"
+              aria-hidden="true"
+            >
+              <div class="pause-card">
+                <p class="eyebrow">Game paused</p>
+                <h2>Take a breath.</h2>
+                <p class="pause-note">
+                  The board is hidden until you resume.
+                </p>
+                <button class="segment is-active" id="resume-button">Resume</button>
+              </div>
+            </div>
           </div>
           <div class="board-footer">
             <div class="legend-chip">
@@ -97,6 +115,13 @@
             <div class="tool-row">
               <button class="tool-button" id="notes-toggle" title="Toggle notes">
                 Notes
+              </button>
+              <button
+                class="tool-button"
+                id="highlight-toggle"
+                title="Highlight all of one number"
+              >
+                Highlight
               </button>
               <button class="tool-button" id="erase-button" title="Erase selected square">
                 Erase
