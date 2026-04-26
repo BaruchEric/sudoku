@@ -536,6 +536,12 @@ function handleCellSelection(index) {
     return;
   }
   state.selectedIndex = index;
+  if (state.highlightMode) {
+    const cellValue = state.values[index];
+    if (cellValue) {
+      state.highlightDigit = cellValue;
+    }
+  }
   render();
   showCellPopover(index);
   saveState();
@@ -606,8 +612,17 @@ function placeValue(rawValue) {
   }
 
   if (state.highlightMode) {
-    setHighlightedDigit(rawValue);
-    return;
+    const idx = state.selectedIndex;
+    const canPlace =
+      idx !== null &&
+      !state.completed &&
+      !state.given.has(idx) &&
+      state.values[idx] === "";
+    if (!canPlace) {
+      setHighlightedDigit(rawValue);
+      return;
+    }
+    state.highlightDigit = String(rawValue);
   }
 
   if (state.completed || state.selectedIndex === null) {
