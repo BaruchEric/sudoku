@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sunlit Sudoku</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <div class="brand-lockup">
+          <p class="eyebrow">Sunlit Sudoku</p>
+          <h1>Daily board</h1>
+        </div>
+        <div class="stat-strip" aria-label="Game stats">
+          <div class="stat-pill">
+            <span class="stat-label">Level</span>
+            <strong id="difficulty-label">Easy</strong>
+          </div>
+          <div class="stat-pill">
+            <span class="stat-label">Mistakes</span>
+            <strong id="mistakes-count">0</strong>
+          </div>
+          <div class="stat-pill">
+            <span class="stat-label">Time</span>
+            <strong id="timer-label">00:00</strong>
+          </div>
+        </div>
+      </header>
+
+      <section class="command-bar" aria-label="Game controls">
+        <div class="segmented-control" aria-label="Choose difficulty">
+          <button class="segment is-active" data-difficulty="easy">Easy</button>
+          <button class="segment" data-difficulty="medium">Medium</button>
+          <button class="segment" data-difficulty="hard">Hard</button>
+        </div>
+        <div class="action-group">
+          <button class="command-button" id="new-game-button" title="Fresh puzzle">
+            <span class="button-icon" aria-hidden="true">+</span>
+            <span>New</span>
+          </button>
+          <button class="command-button" id="undo-button" title="Undo last move" disabled>
+            <span class="button-icon" aria-hidden="true">&lt;</span>
+            <span>Undo</span>
+          </button>
+          <button class="command-button" id="check-button" title="Check board">
+            <span class="button-icon" aria-hidden="true">!</span>
+            <span>Check</span>
+          </button>
+          <button class="command-button" id="hint-button" title="Hint">
+            <span class="button-icon" aria-hidden="true">?</span>
+            <span>Hint</span>
+          </button>
+        </div>
+      </section>
+
+      <section class="playfield">
+        <section class="board-zone" aria-label="Sudoku puzzle">
+          <div class="board-frame">
+            <div
+              id="sudoku-board"
+              class="sudoku-board"
+              role="grid"
+              aria-label="Sudoku board"
+            ></div>
+          </div>
+          <div class="board-footer">
+            <div class="legend-chip">
+              <span class="swatch swatch-fixed"></span>
+              Given
+            </div>
+            <div class="legend-chip">
+              <span class="swatch swatch-note"></span>
+              Notes
+            </div>
+            <div class="legend-chip">
+              <span class="swatch swatch-error"></span>
+              Error
+            </div>
+          </div>
+        </section>
+
+        <aside class="side-panel" aria-label="Move controls">
+          <section class="panel-section">
+            <div class="keypad" id="keypad" aria-label="Number pad">
+              <button class="number-button" data-value="1">1</button>
+              <button class="number-button" data-value="2">2</button>
+              <button class="number-button" data-value="3">3</button>
+              <button class="number-button" data-value="4">4</button>
+              <button class="number-button" data-value="5">5</button>
+              <button class="number-button" data-value="6">6</button>
+              <button class="number-button" data-value="7">7</button>
+              <button class="number-button" data-value="8">8</button>
+              <button class="number-button" data-value="9">9</button>
+            </div>
+            <div class="tool-row">
+              <button class="tool-button" id="notes-toggle" title="Toggle notes">
+                Notes
+              </button>
+              <button class="tool-button" id="erase-button" title="Erase selected square">
+                Erase
+              </button>
+              <button class="tool-button danger" id="solve-button" title="Reveal solution">
+                Reveal
+              </button>
+            </div>
+          </section>
+
+          <section class="panel-section progress-section" aria-label="Progress">
+            <div class="progress-header">
+              <p class="eyebrow">Progress</p>
+              <h2 id="progress-label">30 clues, 51 open</h2>
+            </div>
+            <div class="progress-meter" aria-hidden="true">
+              <span id="progress-fill"></span>
+            </div>
+            <p id="status-message" class="status-message">
+              Find the next clean placement.
+            </p>
+            <div class="mini-stats">
+              <div>
+                <span class="mini-label">Filled</span>
+                <strong id="filled-count">30 / 81</strong>
+              </div>
+              <div>
+                <span class="mini-label">Correct</span>
+                <strong id="correct-count">30</strong>
+              </div>
+              <div>
+                <span class="mini-label">Notes</span>
+                <strong id="note-count">0</strong>
+              </div>
+            </div>
+          </section>
+        </aside>
+      </section>
+    </main>
+
+    <div
+      id="cell-popover"
+      class="cell-popover hidden"
+      aria-label="Cell input"
+      role="dialog"
+    >
+      <div class="popover-grid" aria-label="Quick number pad">
+        <button class="popover-number" data-pop-value="1">1</button>
+        <button class="popover-number" data-pop-value="2">2</button>
+        <button class="popover-number" data-pop-value="3">3</button>
+        <button class="popover-number" data-pop-value="4">4</button>
+        <button class="popover-number" data-pop-value="5">5</button>
+        <button class="popover-number" data-pop-value="6">6</button>
+        <button class="popover-number" data-pop-value="7">7</button>
+        <button class="popover-number" data-pop-value="8">8</button>
+        <button class="popover-number" data-pop-value="9">9</button>
+      </div>
+      <div class="popover-actions">
+        <button class="popover-tool" id="popover-erase">Erase</button>
+        <button class="popover-tool" id="popover-close">Close</button>
+      </div>
+    </div>
+
+    <div id="celebration" class="celebration hidden" aria-live="polite">
+      <div class="celebration-card">
+        <p class="eyebrow">Board Complete</p>
+        <h2>That was gorgeous.</h2>
+        <p id="celebration-message">
+          You finished the puzzle with a clean, steady solve.
+        </p>
+        <button class="segment is-active" id="play-again-button">Play Again</button>
+      </div>
+    </div>
+
+    <div id="live-region" class="sr-only" aria-live="polite"></div>
+    <script src="./app.js"></script>
+  </body>
+</html>

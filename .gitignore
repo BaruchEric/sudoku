@@ -4,3 +4,4 @@
 codex-write-test.tmp
 github-publish-repo/
 node_modules/
+.wrangler/

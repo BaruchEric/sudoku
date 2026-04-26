@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Games · beric.ca</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,500;9..144,700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #0e1116;
+        --bg-soft: #161b22;
+        --card: #1c2230;
+        --card-hover: #232b3c;
+        --border: #2a3346;
+        --text: #e6edf3;
+        --text-dim: #8b95a7;
+        --accent: #f5c451;
+        --accent-soft: rgba(245, 196, 81, 0.14);
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; padding: 0; }
+      body {
+        min-height: 100vh;
+        background:
+          radial-gradient(1200px 600px at 10% -10%, rgba(245, 196, 81, 0.08), transparent 60%),
+          radial-gradient(900px 500px at 110% 10%, rgba(120, 160, 255, 0.07), transparent 60%),
+          var(--bg);
+        color: var(--text);
+        font-family: "Inter", system-ui, -apple-system, sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+      .shell {
+        max-width: 980px;
+        margin: 0 auto;
+        padding: 64px 24px 96px;
+      }
+      header.head {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 16px;
+        margin-bottom: 48px;
+        flex-wrap: wrap;
+      }
+      .eyebrow {
+        font-size: 12px;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        color: var(--text-dim);
+        margin: 0 0 8px;
+      }
+      h1 {
+        font-family: "Fraunces", Georgia, serif;
+        font-weight: 500;
+        font-size: clamp(36px, 5vw, 56px);
+        margin: 0;
+        letter-spacing: -0.02em;
+      }
+      .head-meta {
+        font-size: 13px;
+        color: var(--text-dim);
+      }
+      .head-meta a {
+        color: var(--text-dim);
+        text-decoration: none;
+        border-bottom: 1px dotted var(--border);
+      }
+      .head-meta a:hover { color: var(--accent); border-color: var(--accent); }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+        gap: 18px;
+      }
+      .tile {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        padding: 22px;
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        text-decoration: none;
+        color: inherit;
+        transition: transform 160ms ease, background 160ms ease, border-color 160ms ease;
+        min-height: 168px;
+      }
+      .tile:hover {
+        background: var(--card-hover);
+        border-color: var(--accent);
+        transform: translateY(-2px);
+      }
+      .tile-glyph {
+        width: 44px;
+        height: 44px;
+        border-radius: 10px;
+        background: var(--accent-soft);
+        color: var(--accent);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-family: "Fraunces", serif;
+        font-weight: 700;
+        font-size: 22px;
+      }
+      .tile h2 {
+        margin: 0;
+        font-family: "Fraunces", serif;
+        font-weight: 500;
+        font-size: 22px;
+        letter-spacing: -0.01em;
+      }
+      .tile p {
+        margin: 0;
+        font-size: 14px;
+        color: var(--text-dim);
+        line-height: 1.5;
+      }
+      .tile-arrow {
+        margin-top: auto;
+        font-size: 13px;
+        color: var(--accent);
+        opacity: 0.0;
+        transition: opacity 160ms ease;
+      }
+      .tile:hover .tile-arrow { opacity: 1; }
+      .tile.coming-soon {
+        opacity: 0.55;
+        cursor: default;
+        pointer-events: none;
+        border-style: dashed;
+      }
+      .tag {
+        position: absolute;
+        top: 14px;
+        right: 14px;
+        font-size: 10px;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--text-dim);
+      }
+      footer {
+        margin-top: 64px;
+        font-size: 12px;
+        color: var(--text-dim);
+        text-align: center;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <header class="head">
+        <div>
+          <p class="eyebrow">beric.ca</p>
+          <h1>Games</h1>
+        </div>
+        <div class="head-meta">
+          <a href="https://beric.ca">beric.ca</a> &middot;
+          <a href="https://nova.beric.ca">nova</a>
+        </div>
+      </header>
+
+      <section class="grid">
+        <a class="tile" href="/sudoku/">
+          <div class="tile-glyph">9</div>
+          <h2>Sunlit Sudoku</h2>
+          <p>Daily 9&times;9 board with notes, hints, and three difficulty modes.</p>
+          <span class="tile-arrow">Play &rarr;</span>
+        </a>
+
+        <div class="tile coming-soon">
+          <span class="tag">Soon</span>
+          <div class="tile-glyph">&middot;</div>
+          <h2>More games</h2>
+          <p>Additional puzzles will land here.</p>
+        </div>
+      </section>
+
+      <footer>games.beric.ca</footer>
+    </main>
+  </body>
+</html>
