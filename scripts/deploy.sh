@@ -39,6 +39,12 @@ while IFS= read -r -d '' f; do
   rm -f "$f.bak"
 done < <(find "$BUILD_DIR" -name "*.html" -print0)
 
+# Stamp the service worker cache version so each deploy invalidates the PWA cache.
+while IFS= read -r -d '' sw; do
+  sed -i.bak "s/__SW_VERSION__/${SHA}/g" "$sw"
+  rm -f "$sw.bak"
+done < <(find "$BUILD_DIR" -name "service-worker.js" -print0)
+
 echo "→ Deploying $BUILD_DIR (cache-bust v=$SHA) to Pages project '$PROJECT_NAME' (branch: $BRANCH)"
 bunx wrangler pages deploy "$BUILD_DIR" \
   --project-name="$PROJECT_NAME" \
