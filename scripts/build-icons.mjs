@@ -3,7 +3,7 @@
 // Outputs to deploy/sudoku/.
 import sharp from "sharp";
 import { mkdir, writeFile } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { resolve } from "node:path";
 
 const ROOT = resolve(import.meta.dir, "..");
 const OUT = resolve(ROOT, "deploy/sudoku");
@@ -24,9 +24,11 @@ const targets = [
 
 await mkdir(OUT, { recursive: true });
 
-for (const { name, size } of targets) {
-  const buf = await sharp(Buffer.from(svg(size))).resize(size, size).png().toBuffer();
-  const path = resolve(OUT, name);
-  await writeFile(path, buf);
-  console.log(`✓ ${path} (${size}x${size}, ${buf.length} bytes)`);
-}
+await Promise.all(
+  targets.map(async ({ name, size }) => {
+    const buf = await sharp(Buffer.from(svg(size))).resize(size, size).png().toBuffer();
+    const path = resolve(OUT, name);
+    await writeFile(path, buf);
+    console.log(`✓ ${path} (${size}x${size}, ${buf.length} bytes)`);
+  }),
+);
