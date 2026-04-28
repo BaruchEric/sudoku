@@ -355,7 +355,7 @@ h3 {
 }
 
 .segment.is-active {
-  color: #fff;
+  color: var(--surface);
   background: var(--ink);
   box-shadow: var(--shadow-md);
 }
