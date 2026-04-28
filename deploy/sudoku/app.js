@@ -2,6 +2,8 @@ const SOLUTION =
   "534678912672195348198342567859761423426853791713924856961537284287419635345286179";
 
 const DIGITS = ["1", "2", "3", "4", "5", "6", "7", "8", "9"];
+const INDICES = Array.from({ length: 81 }, (_, i) => i);
+const NINE = [0, 1, 2, 3, 4, 5, 6, 7, 8];
 
 const PUZZLES = {
   easy:
@@ -36,6 +38,34 @@ const PUZZLES = {
     "....8..7.",
 };
 
+function buildPeers(index) {
+  const row = Math.floor(index / 9);
+  const col = index % 9;
+  const boxRow = Math.floor(row / 3) * 3;
+  const boxCol = Math.floor(col / 3) * 3;
+  const peers = new Set();
+  for (let p = 0; p < 9; p += 1) {
+    peers.add(row * 9 + p);
+    peers.add(p * 9 + col);
+  }
+  for (let r = 0; r < 3; r += 1) {
+    for (let c = 0; c < 3; c += 1) {
+      peers.add((boxRow + r) * 9 + (boxCol + c));
+    }
+  }
+  peers.delete(index);
+  return peers;
+}
+
+const PEERS = INDICES.map(buildPeers);
+
+const STORAGE_KEY = "sunlit-sudoku:save:v1";
+const THEME_STORAGE_KEY = "sunlit-sudoku:theme:v1";
+const TIMER_SAVE_INTERVAL_MS = 10_000;
+const THEMES = ["auto", "light", "dark"];
+const THEME_COLORS = { light: "#f4ede0", dark: "#11161a" };
+const THEME_ICONS = { auto: "◐", light: "☀", dark: "☾" };
+
 const boardElement = document.querySelector("#sudoku-board");
 const liveRegion = document.querySelector("#live-region");
 const difficultyLabel = document.querySelector("#difficulty-label");
@@ -49,6 +79,10 @@ const noteCount = document.querySelector("#note-count");
 const notesToggle = document.querySelector("#notes-toggle");
 const highlightToggle = document.querySelector("#highlight-toggle");
 const rainbowToggle = document.querySelector("#rainbow-toggle");
+const newGameButton = document.querySelector("#new-game-button");
+const hintButton = document.querySelector("#hint-button");
+const eraseButton = document.querySelector("#erase-button");
+const solveButton = document.querySelector("#solve-button");
 const checkButton = document.querySelector("#check-button");
 const undoButton = document.querySelector("#undo-button");
 const pauseButton = document.querySelector("#pause-button");
@@ -57,11 +91,20 @@ const pauseOverlay = document.querySelector("#pause-overlay");
 const resumeButton = document.querySelector("#resume-button");
 const progressFill = document.querySelector("#progress-fill");
 const cellPopover = document.querySelector("#cell-popover");
+const popoverEraseButton = document.querySelector("#popover-erase");
+const popoverCloseButton = document.querySelector("#popover-close");
 const celebration = document.querySelector("#celebration");
 const celebrationMessage = document.querySelector("#celebration-message");
+const playAgainButton = document.querySelector("#play-again-button");
+const themeToggle = document.querySelector("#theme-toggle");
+const themeToggleIcon = themeToggle?.querySelector(".theme-toggle-icon");
+const themeToggleLabel = themeToggle?.querySelector(".theme-toggle-label");
+const themeColorMeta = document.querySelector("#theme-color-meta");
 const numberButtons = document.querySelectorAll(".number-button");
+const popoverNumberButtons = document.querySelectorAll(".popover-number");
+const difficultyButtons = document.querySelectorAll("[data-difficulty]");
 
-const STORAGE_KEY = "sunlit-sudoku:save:v1";
+const cellElements = [];
 
 const state = {
   difficulty: "easy",
@@ -82,7 +125,13 @@ const state = {
   runStartedAt: 0,
   timerId: null,
   hydrating: false,
+  lastTimerSaveAt: 0,
+  themePreference: "auto",
 };
+
+function capitalize(text) {
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
 
 function cellRC(index) {
   return { row: Math.floor(index / 9) + 1, col: (index % 9) + 1 };
@@ -97,18 +146,35 @@ function announce(message) {
   liveRegion.textContent = message;
 }
 
+function setToggleButton(button, baseLabel, on) {
+  button.classList.toggle("is-active", on);
+  button.textContent = on ? `${baseLabel} On` : baseLabel;
+}
+
+function applyDifficultySelection(difficulty) {
+  difficultyLabel.textContent = capitalize(difficulty);
+  difficultyButtons.forEach((button) =>
+    button.classList.toggle("is-active", button.dataset.difficulty === difficulty),
+  );
+}
+
+function applyControlsUI() {
+  setToggleButton(notesToggle, "Notes", state.notesMode);
+  setToggleButton(highlightToggle, "Highlight", state.highlightMode);
+  setToggleButton(rainbowToggle, "Rainbow", state.rainbowMode);
+  boardElement.classList.toggle("is-rainbow", state.rainbowMode);
+}
+
 function randomInt(max) {
   return Math.floor(Math.random() * max);
 }
 
 function shuffle(array) {
   const clone = [...array];
-
   for (let index = clone.length - 1; index > 0; index -= 1) {
     const swapIndex = randomInt(index + 1);
     [clone[index], clone[swapIndex]] = [clone[swapIndex], clone[index]];
   }
-
   return clone;
 }
 
@@ -123,7 +189,6 @@ function gridToString(grid) {
 function createTransformPlan(options = {}) {
   const shuffled = shuffle(DIGITS);
   const digitMap = new Map(DIGITS.map((digit, index) => [digit, shuffled[index]]));
-
   return {
     digitMap,
     rowOrders: shuffle([0, 1, 2]).flatMap((band) =>
@@ -139,50 +204,38 @@ function createTransformPlan(options = {}) {
 function transformBoardString(boardString, plan) {
   const chars = stringToGrid(boardString);
   const { digitMap, rowOrders, colOrders, shouldTranspose } = plan;
-
   const transformed = Array.from({ length: 81 }, () => ".");
-
   for (let row = 0; row < 9; row += 1) {
     for (let col = 0; col < 9; col += 1) {
       let sourceRow = rowOrders[row];
       let sourceCol = colOrders[col];
-
       if (shouldTranspose) {
         [sourceRow, sourceCol] = [sourceCol, sourceRow];
       }
-
       const sourceIndex = sourceRow * 9 + sourceCol;
       const targetIndex = row * 9 + col;
       const value = chars[sourceIndex];
       transformed[targetIndex] = digitMap.get(value) ?? value;
     }
   }
-
   return gridToString(transformed);
 }
 
 function createPuzzle(difficulty, fixed = false) {
   const basePuzzle = PUZZLES[difficulty];
-  const baseSolution = SOLUTION;
-
   if (fixed) {
-    return {
-      puzzle: basePuzzle,
-      solution: baseSolution,
-    };
+    return { puzzle: basePuzzle, solution: SOLUTION };
   }
-
   const plan = createTransformPlan();
-
   return {
     puzzle: transformBoardString(basePuzzle, plan),
-    solution: transformBoardString(baseSolution, plan),
+    solution: transformBoardString(SOLUTION, plan),
   };
 }
 
 function buildBoard() {
   boardElement.innerHTML = "";
-
+  cellElements.length = 0;
   for (let row = 0; row < 9; row += 1) {
     for (let col = 0; col < 9; col += 1) {
       const index = row * 9 + col;
@@ -197,6 +250,7 @@ function buildBoard() {
       button.setAttribute("aria-label", `Row ${row + 1} Column ${col + 1}`);
       button.addEventListener("click", () => handleCellSelection(index));
       boardElement.appendChild(button);
+      cellElements.push(button);
     }
   }
 }
@@ -214,12 +268,18 @@ function startTimer({ elapsedMs = 0, paused = false } = {}) {
   state.paused = paused;
   state.runStartedAt = paused ? 0 : Date.now();
   state.timerId = window.setInterval(handleTimerTick, 1000);
+  state.lastTimerSaveAt = Date.now();
   updateTimer();
 }
 
 function handleTimerTick() {
   updateTimer();
-  if (!state.paused && !state.completed) {
+  if (state.paused || state.completed) {
+    return;
+  }
+  const now = Date.now();
+  if (now - state.lastTimerSaveAt >= TIMER_SAVE_INTERVAL_MS) {
+    state.lastTimerSaveAt = now;
     saveState();
   }
 }
@@ -284,7 +344,7 @@ function startNewGame(difficulty, fixed = false) {
   state.difficulty = difficulty;
   state.solution = stringToGrid(solution);
   state.values = puzzleGrid.map((char) => (char === "." ? "" : char));
-  state.notes = Array.from({ length: 81 }, () => new Set());
+  state.notes = INDICES.map(() => new Set());
   state.given = new Set(
     puzzleGrid
       .map((char, index) => (char !== "." ? index : -1))
@@ -300,21 +360,9 @@ function startNewGame(difficulty, fixed = false) {
   state.completed = false;
 
   celebration.classList.add("hidden");
-  difficultyLabel.textContent =
-    difficulty.charAt(0).toUpperCase() + difficulty.slice(1);
   mistakesCount.textContent = "0";
-  notesToggle.textContent = "Notes";
-  notesToggle.classList.remove("is-active");
-  highlightToggle.textContent = "Highlight";
-  highlightToggle.classList.remove("is-active");
-  rainbowToggle.textContent = "Rainbow";
-  rainbowToggle.classList.remove("is-active");
-  boardElement.classList.remove("is-rainbow");
-  document
-    .querySelectorAll("[data-difficulty]")
-    .forEach((button) =>
-      button.classList.toggle("is-active", button.dataset.difficulty === difficulty),
-    );
+  applyDifficultySelection(difficulty);
+  applyControlsUI();
 
   startTimer();
   applyPauseUI();
@@ -322,8 +370,7 @@ function startNewGame(difficulty, fixed = false) {
   saveState();
 
   if (state.selectedIndex !== -1 && state.selectedIndex !== null) {
-    const cell = getCell(state.selectedIndex);
-    cell?.focus();
+    cellElements[state.selectedIndex]?.focus();
   }
 
   const clueCount = state.given.size;
@@ -335,10 +382,6 @@ function startNewGame(difficulty, fixed = false) {
       81 - clueCount
     } empty spaces.`,
   );
-}
-
-function getCell(index) {
-  return boardElement.querySelector(`[data-index="${index}"]`);
 }
 
 function hideCellPopover() {
@@ -383,46 +426,24 @@ function showCellPopover(index) {
     hideCellPopover();
     return;
   }
-
-  const cell = getCell(index);
-
+  const cell = cellElements[index];
   if (!cell) {
     return;
   }
-
   cellPopover.classList.remove("hidden");
   positionCellPopover(cell);
 }
 
-function getPeers(index) {
-  const row = Math.floor(index / 9);
-  const col = index % 9;
-  const boxRow = Math.floor(row / 3) * 3;
-  const boxCol = Math.floor(col / 3) * 3;
-  const peers = new Set();
-
-  for (let position = 0; position < 9; position += 1) {
-    peers.add(row * 9 + position);
-    peers.add(position * 9 + col);
+function describeCell(row, col, value, notes, isFixed) {
+  let detail;
+  if (value) {
+    detail = ` value ${value}`;
+  } else if (notes.size) {
+    detail = ` notes ${[...notes].join(", ")}`;
+  } else {
+    detail = " empty";
   }
-
-  for (let rowOffset = 0; rowOffset < 3; rowOffset += 1) {
-    for (let colOffset = 0; colOffset < 3; colOffset += 1) {
-      peers.add((boxRow + rowOffset) * 9 + (boxCol + colOffset));
-    }
-  }
-
-  peers.delete(index);
-  return peers;
-}
-
-function countValues() {
-  const filled = state.values.filter(Boolean).length;
-  const correct = state.values.filter(
-    (value, index) => value !== "" && value === state.solution[index],
-  ).length;
-  const notesTotal = state.notes.reduce((total, noteSet) => total + noteSet.size, 0);
-  return { filled, correct, notesTotal };
+  return `Row ${row} Column ${col}${detail}${isFixed ? ", given clue" : ""}`;
 }
 
 function cloneNotes(notes) {
@@ -436,14 +457,13 @@ function pushHistory() {
     mistakes: state.mistakes,
     selectedIndex: state.selectedIndex,
   });
-
   if (state.history.length > 80) {
     state.history.shift();
   }
 }
 
 function renderCell(index, ctx) {
-  const cell = getCell(index);
+  const cell = cellElements[index];
   const value = state.values[index];
   const notes = state.notes[index];
   const isRelated = ctx.selectedIndex === index || ctx.peers.has(index);
@@ -469,9 +489,7 @@ function renderCell(index, ctx) {
   cell.classList.toggle("is-highlighted", isHighlighted || hasHighlightedNote);
   cell.setAttribute(
     "aria-label",
-    `Row ${cell.dataset.row} Column ${cell.dataset.col}${
-      value ? ` value ${value}` : notes.size ? ` notes ${[...notes].join(", ")}` : " empty"
-    }${isFixed ? ", given clue" : ""}`,
+    describeCell(cell.dataset.row, cell.dataset.col, value, notes, isFixed),
   );
 
   if (value) {
@@ -481,7 +499,7 @@ function renderCell(index, ctx) {
   }
 
   cell.dataset.digit = "";
-  const noteMarkup = Array.from({ length: 9 }, (_, offset) => {
+  const noteMarkup = NINE.map((offset) => {
     const digit = String(offset + 1);
     const has = notes.has(digit);
     const cls =
@@ -497,20 +515,26 @@ function render() {
     selectedIndex: state.selectedIndex,
     selectedValue:
       state.selectedIndex !== null ? state.values[state.selectedIndex] : "",
-    peers: state.selectedIndex !== null ? getPeers(state.selectedIndex) : new Set(),
+    peers: state.selectedIndex !== null ? PEERS[state.selectedIndex] : new Set(),
     highlightDigit: state.highlightDigit,
   };
 
   const digitCounts = new Map();
+  let filled = 0;
+  let correct = 0;
+  let notesTotal = 0;
+
   for (let index = 0; index < 81; index += 1) {
     renderCell(index, ctx);
     const value = state.values[index];
     if (value) {
+      filled += 1;
+      if (value === state.solution[index]) correct += 1;
       digitCounts.set(value, (digitCounts.get(value) ?? 0) + 1);
     }
+    notesTotal += state.notes[index].size;
   }
 
-  const { filled, correct, notesTotal } = countValues();
   const remaining = 81 - filled;
   mistakesCount.textContent = String(state.mistakes);
   filledCount.textContent = `${filled} / 81`;
@@ -566,17 +590,14 @@ function setHighlightedDigit(rawValue) {
 
 function toggleHighlightMode() {
   state.highlightMode = !state.highlightMode;
-  highlightToggle.classList.toggle("is-active", state.highlightMode);
-  highlightToggle.textContent = state.highlightMode ? "Highlight On" : "Highlight";
   if (state.highlightMode && state.notesMode) {
     state.notesMode = false;
-    notesToggle.classList.remove("is-active");
-    notesToggle.textContent = "Notes";
   }
   if (!state.highlightMode) {
     state.highlightDigit = "";
-    render();
   }
+  applyControlsUI();
+  render();
   saveState();
   setStatus(
     state.highlightMode
@@ -588,9 +609,7 @@ function toggleHighlightMode() {
 
 function toggleRainbowMode() {
   state.rainbowMode = !state.rainbowMode;
-  rainbowToggle.classList.toggle("is-active", state.rainbowMode);
-  rainbowToggle.textContent = state.rainbowMode ? "Rainbow On" : "Rainbow";
-  boardElement.classList.toggle("is-rainbow", state.rainbowMode);
+  applyControlsUI();
   saveState();
   setStatus(
     state.rainbowMode
@@ -601,7 +620,7 @@ function toggleRainbowMode() {
 }
 
 function clearNotesFromPeers(index, value) {
-  for (const peerIndex of getPeers(index)) {
+  for (const peerIndex of PEERS[index]) {
     state.notes[peerIndex].delete(value);
   }
 }
@@ -728,20 +747,17 @@ function moveSelection(deltaRow, deltaCol) {
   render();
   showCellPopover(nextIndex);
   saveState();
-  getCell(nextIndex)?.focus();
+  cellElements[nextIndex]?.focus();
 }
 
 function toggleNotes() {
   state.notesMode = !state.notesMode;
-  notesToggle.classList.toggle("is-active", state.notesMode);
-  notesToggle.textContent = state.notesMode ? "Notes On" : "Notes";
   if (state.notesMode && state.highlightMode) {
     state.highlightMode = false;
     state.highlightDigit = "";
-    highlightToggle.classList.remove("is-active");
-    highlightToggle.textContent = "Highlight";
-    render();
   }
+  applyControlsUI();
+  render();
   saveState();
   setStatus(
     state.notesMode ? "Pencil marks are active." : "Final entries are active.",
@@ -768,17 +784,15 @@ function undoLastMove() {
 }
 
 function checkBoard() {
-  const incorrect = state.values
-    .map((value, index) =>
-      value !== "" && value !== state.solution[index] && !state.given.has(index)
-        ? index
-        : -1,
-    )
-    .filter((index) => index !== -1);
+  let incorrect = 0;
+  for (let index = 0; index < 81; index += 1) {
+    const value = state.values[index];
+    if (value !== "" && value !== state.solution[index] && !state.given.has(index)) {
+      incorrect += 1;
+    }
+  }
 
-  render();
-
-  if (incorrect.length === 0) {
+  if (incorrect === 0) {
     setStatus(
       "Everything on the board is currently consistent. Keep going.",
       "Board check complete. No incorrect squares found.",
@@ -787,10 +801,10 @@ function checkBoard() {
   }
 
   setStatus(
-    `${incorrect.length} square${
-      incorrect.length === 1 ? "" : "s"
+    `${incorrect} square${
+      incorrect === 1 ? "" : "s"
     } need attention. They are highlighted in rose.`,
-    `Board check found ${incorrect.length} incorrect squares.`,
+    `Board check found ${incorrect} incorrect squares.`,
   );
 }
 
@@ -799,12 +813,14 @@ function hint() {
     return;
   }
 
-  const targetIndex =
-    state.selectedIndex !== null &&
-    !state.given.has(state.selectedIndex) &&
-    state.values[state.selectedIndex] !== state.solution[state.selectedIndex]
-      ? state.selectedIndex
-      : state.values.findIndex((value, index) => value !== state.solution[index]);
+  const selected = state.selectedIndex;
+  const selectedNeedsFix =
+    selected !== null &&
+    !state.given.has(selected) &&
+    state.values[selected] !== state.solution[selected];
+  const targetIndex = selectedNeedsFix
+    ? selected
+    : state.values.findIndex((value, index) => value !== state.solution[index]);
 
   if (targetIndex === -1) {
     checkCompletion();
@@ -831,7 +847,7 @@ function revealSolution() {
   hideCellPopover();
   pushHistory();
   state.values = [...state.solution];
-  state.notes = Array.from({ length: 81 }, () => new Set());
+  state.notes = INDICES.map(() => new Set());
   render();
   saveState();
   setStatus("The full solution is on the board.", "Solution revealed.");
@@ -840,7 +856,6 @@ function revealSolution() {
 
 function checkCompletion(revealed = false) {
   const solved = state.values.every((value, index) => value === state.solution[index]);
-
   if (!solved) {
     return;
   }
@@ -853,7 +868,10 @@ function checkCompletion(revealed = false) {
   render();
   saveState();
 
-  const timeTaken = timerLabel.textContent;
+  const elapsed = Math.floor(state.elapsedMs / 1000);
+  const minutes = String(Math.floor(elapsed / 60)).padStart(2, "0");
+  const seconds = String(elapsed % 60).padStart(2, "0");
+  const timeTaken = `${minutes}:${seconds}`;
   celebrationMessage.textContent = revealed
     ? `The board is complete. Explore another puzzle whenever you want.`
     : `You solved it in ${timeTaken} with ${state.mistakes} mistake${
@@ -984,23 +1002,8 @@ function hydrateFromSave() {
     state.history = [];
     state.completed = !!saved.completed;
 
-    difficultyLabel.textContent =
-      state.difficulty.charAt(0).toUpperCase() + state.difficulty.slice(1);
-    notesToggle.classList.toggle("is-active", state.notesMode);
-    notesToggle.textContent = state.notesMode ? "Notes On" : "Notes";
-    highlightToggle.classList.toggle("is-active", state.highlightMode);
-    highlightToggle.textContent = state.highlightMode ? "Highlight On" : "Highlight";
-    rainbowToggle.classList.toggle("is-active", state.rainbowMode);
-    rainbowToggle.textContent = state.rainbowMode ? "Rainbow On" : "Rainbow";
-    boardElement.classList.toggle("is-rainbow", state.rainbowMode);
-    document
-      .querySelectorAll("[data-difficulty]")
-      .forEach((button) =>
-        button.classList.toggle(
-          "is-active",
-          button.dataset.difficulty === state.difficulty,
-        ),
-      );
+    applyDifficultySelection(state.difficulty);
+    applyControlsUI();
 
     const elapsedMs = Math.max(0, Number(saved.elapsedMs) || 0);
     if (state.completed) {
@@ -1034,38 +1037,85 @@ function hydrateFromSave() {
   return true;
 }
 
-document.querySelector("#new-game-button").addEventListener("click", () => {
-  startNewGame(state.difficulty);
-});
+const themeMedia = window.matchMedia("(prefers-color-scheme: dark)");
 
-document.querySelector("#hint-button").addEventListener("click", hint);
-document.querySelector("#undo-button").addEventListener("click", undoLastMove);
-document.querySelector("#erase-button").addEventListener("click", eraseSelected);
-document.querySelector("#solve-button").addEventListener("click", revealSolution);
-document.querySelector("#notes-toggle").addEventListener("click", toggleNotes);
-document.querySelector("#highlight-toggle").addEventListener("click", toggleHighlightMode);
-document.querySelector("#rainbow-toggle").addEventListener("click", toggleRainbowMode);
-document.querySelector("#pause-button").addEventListener("click", togglePause);
-document.querySelector("#resume-button").addEventListener("click", resumeGame);
-document.querySelector("#popover-erase").addEventListener("click", eraseSelected);
-document.querySelector("#popover-close").addEventListener("click", hideCellPopover);
+function loadThemePreference() {
+  try {
+    const saved = localStorage.getItem(THEME_STORAGE_KEY);
+    return THEMES.includes(saved) ? saved : "auto";
+  } catch (err) {
+    return "auto";
+  }
+}
+
+function effectiveTheme(preference) {
+  if (preference === "auto") {
+    return themeMedia.matches ? "dark" : "light";
+  }
+  return preference;
+}
+
+function applyTheme(preference) {
+  const resolved = effectiveTheme(preference);
+  document.documentElement.dataset.theme = resolved;
+  if (themeColorMeta) {
+    themeColorMeta.setAttribute("content", THEME_COLORS[resolved]);
+  }
+  if (themeToggleIcon) themeToggleIcon.textContent = THEME_ICONS[preference];
+  if (themeToggleLabel) themeToggleLabel.textContent = capitalize(preference);
+}
+
+function cycleTheme() {
+  const next = THEMES[(THEMES.indexOf(state.themePreference) + 1) % THEMES.length];
+  state.themePreference = next;
+  try {
+    localStorage.setItem(THEME_STORAGE_KEY, next);
+  } catch (err) {
+    // ignore
+  }
+  applyTheme(next);
+  setStatus(
+    next === "auto"
+      ? "Theme follows your system."
+      : `Theme locked to ${next}.`,
+    `Theme: ${next}.`,
+  );
+}
+
+state.themePreference = loadThemePreference();
+applyTheme(state.themePreference);
+themeMedia.addEventListener("change", () => {
+  if (state.themePreference === "auto") {
+    applyTheme("auto");
+  }
+});
+themeToggle?.addEventListener("click", cycleTheme);
+
+newGameButton.addEventListener("click", () => startNewGame(state.difficulty));
+playAgainButton.addEventListener("click", () => startNewGame(state.difficulty));
+hintButton.addEventListener("click", hint);
+undoButton.addEventListener("click", undoLastMove);
+eraseButton.addEventListener("click", eraseSelected);
+solveButton.addEventListener("click", revealSolution);
 checkButton.addEventListener("click", checkBoard);
-document.querySelector("#play-again-button").addEventListener("click", () => {
-  startNewGame(state.difficulty);
+notesToggle.addEventListener("click", toggleNotes);
+highlightToggle.addEventListener("click", toggleHighlightMode);
+rainbowToggle.addEventListener("click", toggleRainbowMode);
+pauseButton.addEventListener("click", togglePause);
+resumeButton.addEventListener("click", resumeGame);
+popoverEraseButton.addEventListener("click", eraseSelected);
+popoverCloseButton.addEventListener("click", hideCellPopover);
+
+difficultyButtons.forEach((button) => {
+  button.addEventListener("click", () => startNewGame(button.dataset.difficulty));
 });
 
-document.querySelectorAll("[data-difficulty]").forEach((button) => {
-  button.addEventListener("click", () => {
-    startNewGame(button.dataset.difficulty);
-  });
-});
-
+const placeFromButton = (button) => placeValue(button.dataset.value);
 numberButtons.forEach((button) => {
-  button.addEventListener("click", () => placeValue(button.dataset.value));
+  button.addEventListener("click", () => placeFromButton(button));
 });
-
-document.querySelectorAll(".popover-number").forEach((button) => {
-  button.addEventListener("click", () => placeValue(button.dataset.popValue));
+popoverNumberButtons.forEach((button) => {
+  button.addEventListener("click", () => placeFromButton(button));
 });
 
 document.addEventListener("keydown", handleKeydown);
@@ -1077,9 +1127,9 @@ document.addEventListener("pointerdown", (event) => {
   ) {
     return;
   }
-
   hideCellPopover();
 });
+
 let repositionRaf = null;
 function repositionPopover() {
   if (repositionRaf !== null) {

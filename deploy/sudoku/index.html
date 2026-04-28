@@ -5,14 +5,25 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Sunlit Sudoku</title>
     <link rel="manifest" href="./manifest.webmanifest" />
-    <meta name="theme-color" content="#f4ede0" media="(prefers-color-scheme: light)" />
-    <meta name="theme-color" content="#11161a" media="(prefers-color-scheme: dark)" />
+    <meta id="theme-color-meta" name="theme-color" content="#f4ede0" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Sudoku" />
     <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
     <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png" />
+    <script>
+      (function () {
+        try {
+          var saved = localStorage.getItem("sunlit-sudoku:theme:v1");
+          var pref = saved === "light" || saved === "dark" || saved === "auto" ? saved : "auto";
+          var dark = pref === "dark" || (pref === "auto" && matchMedia("(prefers-color-scheme: dark)").matches);
+          document.documentElement.dataset.theme = dark ? "dark" : "light";
+          var meta = document.getElementById("theme-color-meta");
+          if (meta) meta.setAttribute("content", dark ? "#11161a" : "#f4ede0");
+        } catch (e) {}
+      })();
+    </script>
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
@@ -21,6 +32,16 @@
         <div class="brand-lockup">
           <p class="eyebrow">Sunlit Sudoku</p>
           <h1>Daily board</h1>
+          <button
+            id="theme-toggle"
+            class="theme-toggle"
+            type="button"
+            title="Cycle theme: Auto, Light, Dark"
+            aria-label="Cycle theme"
+          >
+            <span class="theme-toggle-icon" aria-hidden="true">◐</span>
+            <span class="theme-toggle-label">Auto</span>
+          </button>
         </div>
         <div class="stat-strip" aria-label="Game stats">
           <div class="stat-pill">
@@ -185,15 +206,15 @@
       role="dialog"
     >
       <div class="popover-grid" aria-label="Quick number pad">
-        <button class="popover-number" data-pop-value="1">1</button>
-        <button class="popover-number" data-pop-value="2">2</button>
-        <button class="popover-number" data-pop-value="3">3</button>
-        <button class="popover-number" data-pop-value="4">4</button>
-        <button class="popover-number" data-pop-value="5">5</button>
-        <button class="popover-number" data-pop-value="6">6</button>
-        <button class="popover-number" data-pop-value="7">7</button>
-        <button class="popover-number" data-pop-value="8">8</button>
-        <button class="popover-number" data-pop-value="9">9</button>
+        <button class="popover-number" data-value="1">1</button>
+        <button class="popover-number" data-value="2">2</button>
+        <button class="popover-number" data-value="3">3</button>
+        <button class="popover-number" data-value="4">4</button>
+        <button class="popover-number" data-value="5">5</button>
+        <button class="popover-number" data-value="6">6</button>
+        <button class="popover-number" data-value="7">7</button>
+        <button class="popover-number" data-value="8">8</button>
+        <button class="popover-number" data-value="9">9</button>
       </div>
       <div class="popover-actions">
         <button class="popover-tool" id="popover-erase">Erase</button>
