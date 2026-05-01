@@ -61,6 +61,7 @@ const PEERS = INDICES.map(buildPeers);
 
 const STORAGE_KEY = "sunlit-sudoku:save:v1";
 const THEME_STORAGE_KEY = "sunlit-sudoku:theme:v1";
+const BEST_TIMES_STORAGE_KEY = "sunlit-sudoku:best-times:v1";
 const TIMER_SAVE_INTERVAL_MS = 10_000;
 const THEMES = ["auto", "light", "dark"];
 const THEME_COLORS = { light: "#f4ede0", dark: "#11161a" };
@@ -71,6 +72,7 @@ const liveRegion = document.querySelector("#live-region");
 const difficultyLabel = document.querySelector("#difficulty-label");
 const mistakesCount = document.querySelector("#mistakes-count");
 const timerLabel = document.querySelector("#timer-label");
+const bestLabel = document.querySelector("#best-label");
 const progressLabel = document.querySelector("#progress-label");
 const statusMessage = document.querySelector("#status-message");
 const filledCount = document.querySelector("#filled-count");
@@ -133,6 +135,51 @@ function capitalize(text) {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
+function formatDuration(ms) {
+  const seconds = Math.floor(Math.max(0, ms) / 1000);
+  const minutes = String(Math.floor(seconds / 60)).padStart(2, "0");
+  const secs = String(seconds % 60).padStart(2, "0");
+  return `${minutes}:${secs}`;
+}
+
+function loadBestTimes() {
+  try {
+    const raw = localStorage.getItem(BEST_TIMES_STORAGE_KEY);
+    if (!raw) return {};
+    const data = JSON.parse(raw);
+    return data && typeof data === "object" ? data : {};
+  } catch (err) {
+    return {};
+  }
+}
+
+function getBestTimeMs(difficulty) {
+  const times = loadBestTimes();
+  const value = times[difficulty];
+  return typeof value === "number" && value > 0 ? value : null;
+}
+
+function saveBestTimeIfBetter(difficulty, elapsedMs) {
+  const times = loadBestTimes();
+  const previous = typeof times[difficulty] === "number" ? times[difficulty] : null;
+  if (previous !== null && previous <= elapsedMs) {
+    return { isNewBest: false, previousMs: previous };
+  }
+  times[difficulty] = elapsedMs;
+  try {
+    localStorage.setItem(BEST_TIMES_STORAGE_KEY, JSON.stringify(times));
+  } catch (err) {
+    // ignore quota / private mode failures
+  }
+  return { isNewBest: true, previousMs: previous };
+}
+
+function updateBestLabel() {
+  if (!bestLabel) return;
+  const best = getBestTimeMs(state.difficulty);
+  bestLabel.textContent = best === null ? "--:--" : formatDuration(best);
+}
+
 function cellRC(index) {
   return { row: Math.floor(index / 9) + 1, col: (index % 9) + 1 };
 }
@@ -156,6 +203,7 @@ function applyDifficultySelection(difficulty) {
   difficultyButtons.forEach((button) =>
     button.classList.toggle("is-active", button.dataset.difficulty === difficulty),
   );
+  updateBestLabel();
 }
 
 function applyControlsUI() {
@@ -868,22 +916,44 @@ function checkCompletion(revealed = false) {
   render();
   saveState();
 
-  const elapsed = Math.floor(state.elapsedMs / 1000);
-  const minutes = String(Math.floor(elapsed / 60)).padStart(2, "0");
-  const seconds = String(elapsed % 60).padStart(2, "0");
-  const timeTaken = `${minutes}:${seconds}`;
-  celebrationMessage.textContent = revealed
-    ? `The board is complete. Explore another puzzle whenever you want.`
-    : `You solved it in ${timeTaken} with ${state.mistakes} mistake${
-        state.mistakes === 1 ? "" : "s"
-      }.`;
+  const timeTaken = formatDuration(state.elapsedMs);
+  let bestUpdate = null;
+  if (!revealed) {
+    bestUpdate = saveBestTimeIfBetter(state.difficulty, state.elapsedMs);
+    updateBestLabel();
+  }
+
+  let message;
+  if (revealed) {
+    message = "The board is complete. Explore another puzzle whenever you want.";
+  } else {
+    const base = `You solved it in ${timeTaken} with ${state.mistakes} mistake${
+      state.mistakes === 1 ? "" : "s"
+    }.`;
+    if (bestUpdate?.isNewBest) {
+      message =
+        bestUpdate.previousMs === null
+          ? `${base} New best time for ${capitalize(state.difficulty)}!`
+          : `${base} New best — beats your previous ${formatDuration(
+              bestUpdate.previousMs,
+            )}.`;
+    } else if (bestUpdate?.previousMs !== null) {
+      message = `${base} Your ${capitalize(state.difficulty)} best is ${formatDuration(
+        bestUpdate.previousMs,
+      )}.`;
+    } else {
+      message = base;
+    }
+  }
+  celebrationMessage.textContent = message;
   celebration.classList.remove("hidden");
-  setStatus(
-    revealed
-      ? "Solution shown. Start another board when you're ready."
-      : "Puzzle complete. Clean work.",
-    "Puzzle complete.",
-  );
+
+  const announcement = revealed
+    ? "Solution shown. Start another board when you're ready."
+    : bestUpdate?.isNewBest
+      ? "Puzzle complete. New best time."
+      : "Puzzle complete. Clean work.";
+  setStatus(announcement, "Puzzle complete.");
 }
 
 function handleKeydown(event) {
