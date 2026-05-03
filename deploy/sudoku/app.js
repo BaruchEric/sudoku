@@ -156,16 +156,17 @@ function loadBestTimes() {
 function getBestTimeMs(difficulty) {
   const times = loadBestTimes();
   const value = times[difficulty];
-  return typeof value === "number" && value > 0 ? value : null;
+  return Number.isFinite(value) && value >= 0 ? value : null;
 }
 
 function saveBestTimeIfBetter(difficulty, elapsedMs) {
+  const safeMs = Math.max(1, Math.floor(Number(elapsedMs) || 0));
   const times = loadBestTimes();
-  const previous = typeof times[difficulty] === "number" ? times[difficulty] : null;
-  if (previous !== null && previous <= elapsedMs) {
+  const previous = getBestTimeMs(difficulty);
+  if (previous !== null && previous <= safeMs) {
     return { isNewBest: false, previousMs: previous };
   }
-  times[difficulty] = elapsedMs;
+  times[difficulty] = safeMs;
   try {
     localStorage.setItem(BEST_TIMES_STORAGE_KEY, JSON.stringify(times));
   } catch (err) {
