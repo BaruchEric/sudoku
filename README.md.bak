@@ -1,0 +1,80 @@
+# sudoku
+
+Sunlit Sudoku — a zero-dependency, framework-free 9x9 Sudoku web game with pencil notes, hints, peer/number highlighting, a rainbow palette, light/dark themes, per-difficulty best times, and PWA install, live at games.beric.ca/sudoku.
+
+## TL;DR
+
+- **What:** "Sunlit Sudoku" — a single-page 9x9 Sudoku game with three built-in puzzles (easy / medium / hard), pencil notes, hints, peer + same-number highlighting, a rainbow cell palette, light/dark themes, and best-time tracking per difficulty. Installable as a PWA.
+- **How:** Pure vanilla HTML/CSS/JS — no framework, no build step for the game itself. The solution and the three puzzle layouts are hard-coded in `app.js`; state persists in `localStorage`.
+- **Stack:** Vanilla JS · HTML · CSS · PWA (`manifest.webmanifest` + `service-worker.js`) · bun + `sharp` for the icon build script.
+- **Run it:** `bunx serve .` then open the printed localhost URL (a server is needed for the service worker / PWA to work).
+- **Deploy:** `bun run deploy` → Cloudflare Pages project `games-portal`, live at **https://games.beric.ca/sudoku/**.
+
+## Overview
+
+A self-contained browser Sudoku game with no framework and no bundler. The board, the single correct `SOLUTION`, and the easy/medium/hard `PUZZLES` are all defined directly in `app.js`. Gameplay features:
+
+- **Pencil notes** — toggle candidate digits per cell.
+- **Hints** — reveal a correct value.
+- **Highlighting** — peers (row/column/box) and all cells sharing the selected number light up.
+- **Rainbow palette** — per-cell color accents.
+- **Themes** — light and dark.
+- **Best times** — tracked per difficulty, persisted in `localStorage`.
+- **PWA** — installable and offline-capable via a service worker scoped to `/sudoku/`.
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| Game | Vanilla HTML / CSS / JS (`index.html`, `app.js`, `styles.css`) — no framework, no build step |
+| PWA | `manifest.webmanifest`, `service-worker.js` (scope + `start_url` = `/sudoku/`) |
+| Tooling | bun runs `scripts/build-icons.mjs`; `sharp` generates the PWA icons |
+| Hosting | Cloudflare Pages — project `games-portal`, domain `games.beric.ca` |
+
+## Project Layout
+
+```
+index.html / app.js / styles.css   # game source (repo root = dev copy)
+package.json                       # bun scripts: build:icons, deploy
+scripts/
+  build-icons.mjs                  # generates PWA icons via sharp
+  deploy.sh                        # deploys deploy/ to Cloudflare Pages
+  list-deployments.sh              # lists recent Pages deployments
+deploy/                            # what actually ships to games.beric.ca
+  index.html                       # games portal landing page  ->  /
+  sudoku/                          # the Sudoku app              ->  /sudoku/
+```
+
+The `games.beric.ca` Pages project is a multi-game portal: the landing page is served at `/` and this game is mounted at `/sudoku/`.
+
+## Getting Started
+
+```bash
+bunx serve .        # serve the repo root, open the localhost URL
+bun install         # only needed for the icon script (sharp)
+bun run build:icons # regenerate PWA icons
+```
+
+## Scripts
+
+| Command | What it does |
+|---------|--------------|
+| `bun run build:icons` | Generate `icon-192.png`, `icon-512.png`, `apple-touch-icon.png` via sharp |
+| `bun run deploy` | Deploy `deploy/` to Cloudflare Pages (production, branch=main) |
+| `./scripts/deploy.sh preview` | Preview-branch deploy |
+| `./scripts/list-deployments.sh` | List recent Pages deployments |
+
+## Deployment (Cloudflare Pages)
+
+`deploy.sh` deploys the `deploy/` directory to the Cloudflare Pages project `games-portal` via `wrangler pages deploy`. On each deploy it copies `deploy/` to a temp build dir and:
+
+- appends `?v=<git-short-sha>` to local CSS/JS refs in every HTML file (browser cache-bust), and
+- stamps the service-worker cache version (`__SW_VERSION__` → SHA) so the PWA cache invalidates per release.
+
+Credentials: the script reads the Cloudflare Global API Key from `~/Arik/dev/.env`.
+
+> **Sync gotcha (load-bearing):** when editing the game, update **both** the root copies **and** `deploy/sudoku/` (`index.html`, `app.js`, `styles.css`) — they must stay in sync. Only the `deploy/` tree ships; the repo root is the dev/working copy.
+
+## Status
+
+Live and playable in production at **https://games.beric.ca/sudoku/**. The puzzles are a fixed built-in set (easy/medium/hard derived from one hard-coded solution) — there is no puzzle generator. No test suite; the game is verified by playing it in the browser.
